@@ -12,11 +12,23 @@ This document describes the main user flows, actors, and plugin extension points
    - [Authentication Flow](#authentication-flow)
    - [Patient Management Flow](#patient-management-flow)
    - [Clinical Encounter Flow](#clinical-encounter-flow)
+   - [Medication Management Flow](#medication-management-flow)
+   - [Care Team Management Flow](#care-team-management-flow)
    - [Facility Management Flow](#facility-management-flow)
+   - [Inventory & Supply Chain Flow](#inventory--supply-chain-flow)
+   - [Device Management Flow](#device-management-flow)
    - [Scheduling & Appointments Flow](#scheduling--appointments-flow)
-   - [Billing Flow](#billing-flow)
+   - [Public Appointment Booking Flow](#public-appointment-booking-flow)
+   - [Appointment Queuing Flow](#appointment-queuing-flow)
+   - [Billing & Accounts Flow](#billing--accounts-flow)
+   - [Consent Management Flow](#consent-management-flow)
+   - [File Management Flow](#file-management-flow)
+   - [Questionnaire & Templates Flow](#questionnaire--templates-flow)
+   - [User Preferences Flow](#user-preferences-flow)
 4. [Plugin Extension Points](#plugin-extension-points)
 5. [Permission System](#permission-system)
+6. [State Management](#state-management)
+7. [Recent Features](#recent-features)
 
 ---
 
@@ -26,6 +38,7 @@ This document describes the main user flows, actors, and plugin extension points
 flowchart TB
     subgraph Frontend["Care Frontend Application"]
         PR[Public Router] --> Auth[Authentication]
+        PR --> PublicAppt[Public Appointments]
         AR[App Router] --> Features[Feature Modules]
         PatR[Patient Router] --> PatientFeatures[Patient Features]
     end
@@ -36,17 +49,26 @@ flowchart TB
         Nurse[Nurse]
         Staff[Staff]
         Volunteer[Volunteer]
+        Patient[Patient/Public User]
     end
 
     subgraph Plugins["Plugin System"]
         PE[Plugin Engine]
         PM[Plugin Manifests]
         PC[Plugin Components]
+        PD[Plugin Devices]
+    end
+
+    subgraph StateManagement["State Management"]
+        Jotai[Jotai Atoms]
+        Context[React Context]
+        TanStack[TanStack Query]
     end
 
     Actors --> Frontend
     PE --> Features
     PE --> PatientFeatures
+    StateManagement --> Frontend
 ```
 
 ---
@@ -62,13 +84,15 @@ flowchart TB
 | **Nurse** | Nursing staff | Patient care, vitals monitoring, medication administration |
 | **Staff** | General facility staff | Administrative tasks, patient registration, scheduling |
 | **Volunteer** | Volunteer workers | Support activities, patient assistance |
+| **Patient** | Public user | Self-registration, appointment booking, viewing records |
 
 ### Role Hierarchy
 
 ```mermaid
 flowchart TD
     SA[Super Admin] --> OA[Organization Admin]
-    OA --> FA[Facility Admin]
+    OA --> GA[Geo Admin]
+    GA --> FA[Facility Admin]
     FA --> D[Doctor]
     FA --> N[Nurse]
     FA --> S[Staff]
@@ -76,6 +100,7 @@ flowchart TD
 
     subgraph Permissions
         OA -.-> OP[Organization Permissions]
+        GA -.-> GP[Geographic Permissions]
         FA -.-> FP[Facility Permissions]
         D -.-> CP[Clinical Permissions]
         N -.-> NP[Nursing Permissions]
@@ -124,7 +149,8 @@ flowchart TD
         Found -->|No| CreateNew[Create New Patient]
         CreateNew --> RegForm[Registration Form]
         RegForm --> PLUGIN_REG[/"[PLUGIN: PatientRegistrationForm]<br/>Custom registration fields"/]
-        PLUGIN_REG --> SavePatient[Save Patient]
+        PLUGIN_REG --> Identifiers[Add Patient Identifiers]
+        Identifiers --> SavePatient[Save Patient]
     end
 
     subgraph PatientHome["Patient Home"]
@@ -138,6 +164,7 @@ flowchart TD
         Tabs --> Encounters[Encounters]
         Tabs --> Files[Files]
         Tabs --> Appointments[Appointments]
+        Tabs --> Allergies[Allergies]
 
         Demo --> PLUGIN_DEMO[/"[PLUGIN: PatientDetailsTabDemographyGeneralInfo]<br/>Custom demographics"/]
     end
@@ -148,6 +175,7 @@ flowchart TD
         PH --> NewEncounter[Create Encounter]
         PH --> BookAppt[Book Appointment]
         PH --> UploadFile[Upload File]
+        PH --> AddAllergy[Add Allergy/Intolerance]
     end
 
     style PLUGIN_REG fill:#fff3e0,stroke:#ff9800
@@ -165,7 +193,7 @@ flowchart TD
 flowchart TD
     subgraph EncounterCreation["Encounter Creation"]
         Start([Patient Selected]) --> CreateEnc[Create Encounter]
-        CreateEnc --> SelectType[Select Encounter Type]
+        CreateEnc --> SelectType[Select Encounter Class]
         SelectType --> SetLocation[Set Location]
         SetLocation --> AssignTeam[Assign Care Team]
         AssignTeam --> EncCreated[Encounter Created]
@@ -175,13 +203,20 @@ flowchart TD
         EncCreated --> EncHome[Encounter Home]
         EncHome --> PLUGIN_ENC[/"[PLUGIN: EncounterActions]<br/>Custom encounter actions"/]
 
-        EncHome --> Tabs{Documentation}
-        Tabs --> Quest[Questionnaires]
-        Tabs --> Vitals[Vital Signs]
+        EncHome --> Tabs{Documentation Tabs}
+        Tabs --> Overview[Overview]
+        Tabs --> Quest[Questionnaires/Responses]
+        Tabs --> Vitals[Observations/Vitals]
         Tabs --> Diagnosis[Diagnosis]
         Tabs --> Symptoms[Symptoms]
-        Tabs --> Prescriptions[Prescriptions]
+        Tabs --> Prescriptions[Prescriptions/Medicines]
         Tabs --> Notes[Clinical Notes]
+        Tabs --> Consents[Consents]
+        Tabs --> DevicesTab[Devices]
+        Tabs --> DiagReports[Diagnostic Reports]
+        Tabs --> ServiceReqs[Service Requests]
+        Tabs --> FilesTab[Files]
+        Tabs --> Plots[Plots]
         Tabs --> PLUGIN_TABS[/"[PLUGIN: encounterTabs]<br/>Custom encounter tabs"/]
 
         Quest --> PLUGIN_SCRIBE[/"[PLUGIN: Scribe]<br/>AI note-taking assistance"/]
@@ -198,7 +233,8 @@ flowchart TD
         EncHome --> MarkComplete[Mark as Complete]
         MarkComplete --> PLUGIN_COMPLETE[/"[PLUGIN: PatientInfoCardMarkAsComplete]<br/>Custom completion logic"/]
         PLUGIN_COMPLETE --> GenerateReport[Generate Report]
-        GenerateReport --> End([Encounter Closed])
+        GenerateReport --> PrintPrescription[Print Prescription]
+        PrintPrescription --> End([Encounter Closed])
     end
 
     style PLUGIN_ENC fill:#fff3e0,stroke:#ff9800
@@ -206,6 +242,80 @@ flowchart TD
     style PLUGIN_SCRIBE fill:#fff3e0,stroke:#ff9800
     style PLUGIN_SR fill:#fff3e0,stroke:#ff9800
     style PLUGIN_COMPLETE fill:#fff3e0,stroke:#ff9800
+```
+
+---
+
+### Medication Management Flow
+
+```mermaid
+flowchart TD
+    subgraph MedicationRequest["Medication Request"]
+        Start([Encounter Active]) --> CreateMed[Create Medication Request]
+        CreateMed --> SelectMed[Select Medication]
+        SelectMed --> SetDosage[Set Dosage & Frequency]
+        SetDosage --> SetDuration[Set Duration]
+        SetDuration --> AddNotes[Add Notes]
+        AddNotes --> SaveMed[Save Medication]
+    end
+
+    subgraph MedicationAdministration["Medication Administration"]
+        SaveMed --> MedList[Medication List]
+        MedList --> AdminMed[Administer Medication]
+        AdminMed --> RecordAdmin[Record Administration]
+        RecordAdmin --> PrintAdmin[Print Administration Record]
+    end
+
+    subgraph PharmacyQueue["Pharmacy Queue"]
+        MedList --> PharmQueue[Pharmacy Queue]
+        PharmQueue --> DispenseMed[Dispense Medication]
+        DispenseMed --> SubstitutionCheck{Substitution Needed?}
+        SubstitutionCheck -->|Yes| SubSheet[Substitution Sheet]
+        SubSheet --> SelectAlt[Select Alternative]
+        SelectAlt --> CompletePrescription
+        SubstitutionCheck -->|No| CompletePrescription[Complete Prescription]
+    end
+
+    subgraph Billing["Medication Billing"]
+        CompletePrescription --> BillMed[Bill Medication]
+        BillMed --> AddToInvoice[Add to Invoice]
+    end
+
+    subgraph History["Medication History"]
+        MedList --> MedStatement[Medication Statement]
+        MedStatement --> HistoricalMeds[Historical Medications]
+    end
+```
+
+---
+
+### Care Team Management Flow
+
+```mermaid
+flowchart TD
+    subgraph TeamSetup["Care Team Setup"]
+        Start([Encounter/Patient]) --> ViewTeam[View Care Team]
+        ViewTeam --> AddMember{Add Member?}
+        AddMember -->|Yes| SearchUser[Search User]
+        SearchUser --> SelectRole[Select Role]
+        SelectRole --> AssignMember[Assign to Team]
+        AssignMember --> TeamUpdated[Team Updated]
+    end
+
+    subgraph TeamManagement["Team Management"]
+        TeamUpdated --> TeamList[Care Team List]
+        TeamList --> EditMember[Edit Member Role]
+        TeamList --> RemoveMember[Remove Member]
+        TeamList --> FilterByTeam[Filter Encounters by Team]
+    end
+
+    subgraph Communication["Team Communication"]
+        TeamList --> PLUGIN_DOCTOR[/"[PLUGIN: DoctorConnectButtons]<br/>Custom communication"/]
+        PLUGIN_DOCTOR --> VideoCall[Video Call]
+        PLUGIN_DOCTOR --> Message[Send Message]
+    end
+
+    style PLUGIN_DOCTOR fill:#fff3e0,stroke:#ff9800
 ```
 
 ---
@@ -239,17 +349,86 @@ flowchart TD
         Services --> ServiceReqs[Service Requests]
     end
 
-    subgraph ResourceManagement["Resource Management"]
-        FacHome --> Resources[Resources]
-        Resources --> Devices[Medical Devices]
-        Resources --> Consumables[Consumables]
-        Resources --> Inventory[Inventory]
-
-        Devices --> PLUGIN_DEV[/"[PLUGIN: devices]<br/>Custom device manifests"/]
+    subgraph FacilitySettings["Facility Settings"]
+        FacHome --> Settings[Settings]
+        Settings --> FacOrgs[Facility Organizations]
+        Settings --> DeviceConfig[Device Configuration]
+        Settings --> Templates[Encounter Templates]
     end
 
     style PLUGIN_FAC fill:#fff3e0,stroke:#ff9800
+```
+
+---
+
+### Inventory & Supply Chain Flow
+
+```mermaid
+flowchart TD
+    subgraph InternalTransfer["Internal Transfer"]
+        Start([Facility]) --> Inventory[Inventory Management]
+        Inventory --> InternalXfer[Internal Transfer]
+        InternalXfer --> SelectSource[Select Source Location]
+        SelectSource --> SelectDest[Select Destination]
+        SelectDest --> SelectItems[Select Items]
+        SelectItems --> SelectLots[Select Stock Lots]
+        SelectLots --> ConfirmXfer[Confirm Transfer]
+    end
+
+    subgraph ExternalSupply["External Supply Chain"]
+        Inventory --> ExternalSupply[External Supply]
+        ExternalSupply --> PurchaseOrder[Purchase Order]
+        ExternalSupply --> DeliveryOrder[Delivery Order]
+        DeliveryOrder --> ToReceive[Items To Receive]
+        PurchaseOrder --> ToDispatch[Items To Dispatch]
+    end
+
+    subgraph StockManagement["Stock Management"]
+        Inventory --> StockLots[Stock Lot Management]
+        StockLots --> ViewLots[View Stock Lots]
+        StockLots --> ExpiryTracking[Expiry Tracking]
+        StockLots --> LotSelection[Lot Selection for Dispense]
+    end
+
+    subgraph ProductKnowledge["Product Knowledge"]
+        Inventory --> Products[Product Catalog]
+        Products --> ProductDetails[Product Details]
+        Products --> SupplierInfo[Supplier Information]
+    end
+```
+
+---
+
+### Device Management Flow
+
+```mermaid
+flowchart TD
+    subgraph DeviceSetup["Device Setup"]
+        Start([Facility Settings]) --> Devices[Device Management]
+        Devices --> AddDevice[Add Device]
+        AddDevice --> SelectType[Select Device Type]
+        SelectType --> PLUGIN_DEV[/"[PLUGIN: devices]<br/>Custom device types"/]
+        PLUGIN_DEV --> ConfigDevice[Configure Device]
+        ConfigDevice --> SaveDevice[Save Device]
+    end
+
+    subgraph EncounterDevices["Encounter Device Association"]
+        SaveDevice --> DeviceList[Device List]
+        DeviceList --> AssocDevice[Associate Device Sheet]
+        AssocDevice --> SelectEncounter[Select Encounter]
+        SelectEncounter --> LinkDevice[Link Device to Encounter]
+    end
+
+    subgraph DeviceData["Device Data Display"]
+        LinkDevice --> EncDevices[Encounter Devices Tab]
+        EncDevices --> DeviceOverview[Device Overview Card]
+        DeviceOverview --> PLUGIN_CARD[/"[PLUGIN: devices.showPageCard]<br/>Custom device display"/]
+        EncDevices --> EncOverview[/"[PLUGIN: devices.encounterOverview]<br/>Device in encounter"/]
+    end
+
     style PLUGIN_DEV fill:#fff3e0,stroke:#ff9800
+    style PLUGIN_CARD fill:#fff3e0,stroke:#ff9800
+    style EncOverview fill:#fff3e0,stroke:#ff9800
 ```
 
 ---
@@ -264,6 +443,7 @@ flowchart TD
         ManageSchedule --> SetAvail[Set Availability]
         ManageSchedule --> Exceptions[Schedule Exceptions]
         CreateSlots --> Templates[Use Templates]
+        ManageSchedule --> ServiceType[Set Service Type]
     end
 
     subgraph AppointmentBooking["Appointment Booking"]
@@ -280,7 +460,8 @@ flowchart TD
         ApptList --> Reschedule[Reschedule]
         ApptList --> Cancel[Cancel]
         ApptList --> CheckIn[Check-In]
-        CheckIn --> StartEnc[Start Encounter]
+        CheckIn --> GenerateToken[Generate Token]
+        GenerateToken --> StartEnc[Start Encounter]
     end
 
     style PLUGIN_SEARCH fill:#fff3e0,stroke:#ff9800
@@ -288,25 +469,100 @@ flowchart TD
 
 ---
 
-### Billing Flow
+### Public Appointment Booking Flow
 
 ```mermaid
 flowchart TD
-    subgraph ServiceCharging["Service Charging"]
-        Start([Encounter/Service]) --> AddCharge[Add Charge]
-        AddCharge --> SelectService[Select Service]
-        SelectService --> SetQuantity[Set Quantity]
-        SetQuantity --> ApplyDiscount[Apply Discount]
+    subgraph PublicAccess["Public Access (No Auth)"]
+        Start([Public User]) --> FacilityPage[Facility Public Page]
+        FacilityPage --> ViewDoctors[View Available Doctors]
+        ViewDoctors --> SelectDoctor[Select Doctor]
+        SelectDoctor --> ViewSchedule[View Schedule]
+    end
+
+    subgraph PatientAuth["Patient Authentication"]
+        ViewSchedule --> SelectSlot[Select Time Slot]
+        SelectSlot --> PatientLogin{Has Account?}
+        PatientLogin -->|Yes| Login[Patient Login]
+        PatientLogin -->|No| Register[Patient Registration]
+        Register --> FillDetails[Fill Patient Details]
+        FillDetails --> VerifyPhone[Verify Phone/OTP]
+    end
+
+    subgraph Booking["Complete Booking"]
+        Login --> ConfirmBooking[Confirm Booking]
+        VerifyPhone --> ConfirmBooking
+        ConfirmBooking --> BookingSuccess[Booking Success]
+        BookingSuccess --> ViewAppointment[View Appointment Details]
+    end
+```
+
+---
+
+### Appointment Queuing Flow
+
+```mermaid
+flowchart TD
+    subgraph QueueSetup["Queue Setup"]
+        Start([Practitioner]) --> ManageQueue[Manage Queue]
+        ManageQueue --> TokenCategories[Token Categories]
+        TokenCategories --> CreateCategory[Create Token Category]
+    end
+
+    subgraph TokenGeneration["Token Generation"]
+        Patient([Patient Arrives]) --> CheckIn[Check-In]
+        CheckIn --> SelectCategory[Select Token Category]
+        SelectCategory --> GenerateToken[Generate Token]
+        GenerateToken --> TokenNumber[Token Number Assigned]
+    end
+
+    subgraph QueueManagement["Queue Management"]
+        TokenNumber --> QueueDisplay[Queue Display]
+        QueueDisplay --> OngoingQueue[Ongoing Queue]
+        QueueDisplay --> CompletedQueue[Completed Queue]
+        OngoingQueue --> CallPatient[Call Patient]
+        CallPatient --> StartEncounter[Start Encounter]
+        StartEncounter --> TokenEncLink[Link Token to Encounter]
+    end
+
+    subgraph QueueRedirect["Token Redirect"]
+        TokenEncLink --> TokenRedirect[Token Encounter Redirect]
+        TokenRedirect --> EncounterPage[Go to Encounter]
+    end
+```
+
+---
+
+### Billing & Accounts Flow
+
+```mermaid
+flowchart TD
+    subgraph AccountManagement["Account Management"]
+        Start([Patient]) --> CreateAccount[Create Patient Account]
+        CreateAccount --> AccountDetails[Account Details]
+        AccountDetails --> ViewCharges[View Charges]
+    end
+
+    subgraph ChargeItems["Charge Items"]
+        ViewCharges --> AddCharges[Add Charges]
+        AddCharges --> BedCharges[Bed Charges]
+        AddCharges --> ServiceCharges[Service Charges]
+        AddCharges --> MedCharges[Medication Charges]
+        AddCharges --> ConsumableCharges[Consumable Charges]
     end
 
     subgraph InvoiceManagement["Invoice Management"]
-        ApplyDiscount --> CreateInvoice[Create Invoice]
-        CreateInvoice --> ReviewInvoice[Review Invoice]
-        ReviewInvoice --> SendInvoice[Send to Patient]
+        AddCharges --> CreateInvoice[Create Invoice]
+        CreateInvoice --> ApplyDiscount[Apply Discount]
+        ApplyDiscount --> ReviewInvoice[Review Invoice]
+        ReviewInvoice --> FinalizeInvoice{Finalize?}
+        FinalizeInvoice -->|Yes| InvoiceFinalized[Invoice Finalized]
+        FinalizeInvoice -->|No| EditInvoice[Edit Invoice]
+        EditInvoice --> ReviewInvoice
     end
 
     subgraph PaymentProcessing["Payment Processing"]
-        SendInvoice --> RecordPayment[Record Payment]
+        InvoiceFinalized --> RecordPayment[Record Payment]
         RecordPayment --> PLUGIN_PAY[/"[PLUGIN: InvoiceRecordPaymentOptions]<br/>Custom payment methods"/]
         PLUGIN_PAY --> PayMethod{Payment Method}
         PayMethod --> Cash[Cash]
@@ -316,15 +572,139 @@ flowchart TD
     end
 
     subgraph Reconciliation["Reconciliation"]
-        Cash --> Reconcile[Reconcile Payment]
+        Cash --> Reconcile[Payment Reconciliation]
         Card --> Reconcile
         Insurance --> Reconcile
         CustomPay --> Reconcile
-        Reconcile --> GenerateReceipt[Generate Receipt]
-        GenerateReceipt --> End([Complete])
+        Reconcile --> LocationFilter[Filter by Location]
+        LocationFilter --> GenerateReceipt[Generate Receipt]
+        GenerateReceipt --> AutoPrint[Auto Print]
     end
 
     style PLUGIN_PAY fill:#fff3e0,stroke:#ff9800
+```
+
+---
+
+### Consent Management Flow
+
+```mermaid
+flowchart TD
+    subgraph ConsentCreation["Consent Creation"]
+        Start([Encounter]) --> ConsentsTab[Consents Tab]
+        ConsentsTab --> AddConsent[Add Consent]
+        AddConsent --> ConsentForm[Consent Form Sheet]
+        ConsentForm --> SelectType[Select Consent Type]
+        SelectType --> FillDetails[Fill Consent Details]
+        FillDetails --> PatientSign[Patient Signature]
+        PatientSign --> SaveConsent[Save Consent]
+    end
+
+    subgraph ConsentManagement["Consent Management"]
+        SaveConsent --> ConsentList[Consent List]
+        ConsentList --> ViewConsent[View Consent Detail]
+        ViewConsent --> ConsentDetail[Consent Detail Page]
+        ConsentDetail --> UpdateConsent[Update Consent]
+        ConsentDetail --> RevokeConsent[Revoke Consent]
+    end
+```
+
+---
+
+### File Management Flow
+
+```mermaid
+flowchart TD
+    subgraph FileUpload["File Upload"]
+        Start([Patient/Encounter]) --> FilesTab[Files Tab]
+        FilesTab --> UploadFile[Upload File]
+        UploadFile --> SelectFile[Select File]
+        SelectFile --> Compress{Compress?}
+        Compress -->|Yes| CompressFile[Compress File]
+        Compress -->|No| ProcessFile[Process File]
+        CompressFile --> ProcessFile
+        ProcessFile --> SaveFile[Save File]
+    end
+
+    subgraph FileManagement["File Management"]
+        SaveFile --> FileList[File List]
+        FileList --> ViewFile[View File]
+        FileList --> DownloadFile[Download File]
+        FileList --> ArchiveFile[Archive File]
+        FileList --> DeleteFile[Delete File]
+    end
+
+    subgraph FileAccess["File Access Control"]
+        ViewFile --> CheckAccess{Has Access?}
+        CheckAccess -->|Yes| DisplayFile[Display File]
+        CheckAccess -->|No| AccessDenied[Access Denied]
+    end
+```
+
+---
+
+### Questionnaire & Templates Flow
+
+```mermaid
+flowchart TD
+    subgraph QuestionnaireManagement["Questionnaire Management"]
+        Start([Admin]) --> QuestList[Questionnaire List]
+        QuestList --> CreateQuest[Create Questionnaire]
+        CreateQuest --> QuestEditor[Questionnaire Editor]
+        QuestEditor --> AddQuestions[Add Questions]
+        AddQuestions --> SetConditions[Set Conditions]
+        SetConditions --> EncClassEval[Encounter Class Evaluator]
+        EncClassEval --> SaveQuest[Save Questionnaire]
+    end
+
+    subgraph ResponseTemplates["Response Templates"]
+        SaveQuest --> ResponseTemplates[Response Templates]
+        ResponseTemplates --> ManageTemplates[Manage Templates Sheet]
+        ManageTemplates --> FacOrgSelector[Facility Organization Selector]
+        FacOrgSelector --> CreateTemplate[Create Template]
+    end
+
+    subgraph EncounterTemplates["Encounter Templates"]
+        Start2([Facility]) --> TemplateBuilder[Template Builder]
+        TemplateBuilder --> SelectQuests[Select Questionnaires]
+        SelectQuests --> ArrangeOrder[Arrange Order]
+        ArrangeOrder --> SaveTemplate[Save Template]
+        SaveTemplate --> ApplyToEnc[Apply to Encounters]
+    end
+
+    subgraph ValueSets["ValueSet Management"]
+        QuestEditor --> ValueSets[ValueSets]
+        ValueSets --> CreateValueSet[Create ValueSet]
+        CreateValueSet --> AddOptions[Add Options]
+        AddOptions --> UseInQuest[Use in Questionnaire]
+    end
+```
+
+---
+
+### User Preferences Flow
+
+```mermaid
+flowchart TD
+    subgraph Preferences["User Preferences"]
+        Start([User]) --> Settings[User Settings]
+        Settings --> Preferences[Preferences]
+        Preferences --> PinnedLinks[Pinned Links]
+    end
+
+    subgraph PinPages["Pin Pages"]
+        AnyPage([Any Page]) --> PinDialog[Pin Page Dialog]
+        PinDialog --> SetLabel[Set Label]
+        SetLabel --> ConfirmPin[Confirm Pin]
+        ConfirmPin --> AddToSidebar[Add to Sidebar]
+    end
+
+    subgraph ManagePins["Manage Pins"]
+        PinnedLinks --> ViewPins[View Pinned Pages]
+        ViewPins --> ReorderPins[Reorder Pins]
+        ViewPins --> UnpinPage[Unpin Page]
+        ViewPins --> EditLabel[Edit Label]
+    end
 ```
 
 ---
@@ -351,6 +731,40 @@ The system uses **Module Federation** for dynamic plugin loading. Plugins can ex
 | `ServiceRequestAction` | Service Requests | Custom service actions |
 | `InvoiceRecordPaymentOptions` | Billing/Payment | Custom payment methods |
 
+### Device Plugin Manifest
+
+Plugins can provide custom device types with:
+
+```typescript
+interface PluginDeviceManifest {
+  type: string;              // Device care_type
+  icon: IconComponent;       // Custom device icon
+  configureForm: Component;  // Device configuration UI
+  showPageCard: Component;   // Device display card
+  encounterOverview: Component; // Device data in encounter
+}
+```
+
+### Encounter Tab Extensions
+
+Plugins can add custom tabs to encounters:
+
+| Built-in Tabs | Description |
+|--------------|-------------|
+| Overview | Encounter summary |
+| Responses | Questionnaire responses |
+| Observations | Vitals and observations |
+| Medicines | Medications/Prescriptions |
+| Notes | Clinical notes |
+| Consents | Patient consents |
+| Devices | Associated devices |
+| Diagnostic Reports | Lab/diagnostic reports |
+| Service Requests | Service requests |
+| Files | Uploaded files |
+| Plots | Data visualization |
+
+Custom tabs via `encounterTabs` plugin manifest.
+
 ### Navigation Extension Points
 
 ```mermaid
@@ -365,18 +779,23 @@ flowchart LR
     subgraph BillingNav["Billing Navigation"]
         Invoices[Invoices]
         Payments[Payments]
+        Accounts[Accounts]
+        Reconciliation[Reconciliation]
         PLUGIN_BILL[/"[PLUGIN: billingNavItems]"/]
     end
 
     subgraph UserNav["User Menu"]
         Profile[Profile]
         Settings[Settings]
+        Preferences[Preferences]
         PLUGIN_USER[/"[PLUGIN: userNavItems]"/]
     end
 
     subgraph AdminNav["Admin Navigation"]
         Users[Users]
         Roles[Roles]
+        Questionnaires[Questionnaires]
+        Plugins[Plugins]
         PLUGIN_ADMIN[/"[PLUGIN: adminNavItems]"/]
     end
 
@@ -423,6 +842,7 @@ flowchart TD
         Devices[Device Manifests]
         EncTabs[Encounter Tabs]
         OrgTabs[Organization Tabs]
+        Extends[Extension Types]
     end
 
     subgraph ErrorHandling["Error Handling"]
@@ -437,6 +857,14 @@ flowchart TD
     PluginManifest --> RenderPlugin
     RenderPlugin --> ErrorBoundary
     RenderPlugin --> Suspense
+```
+
+### Plugin Extension Types
+
+```typescript
+type SupportedPluginExtensions =
+  | "DoctorConnectButtons"      // Extend doctor communication
+  | "PatientExternalRegistration"; // External patient registration
 ```
 
 ---
@@ -475,6 +903,13 @@ flowchart TD
         O4[is_geo_admin]
     end
 
+    subgraph SchedulePerms["Schedule Permissions"]
+        S1[can_list_booking]
+        S2[can_write_booking]
+        S3[can_reschedule_booking]
+        S4[can_write_schedule]
+    end
+
     subgraph AdminPerms["Admin Permissions"]
         A1[can_create_user]
         A2[can_list_user]
@@ -508,6 +943,53 @@ flowchart TD
 
 ---
 
+## State Management
+
+### Context Providers
+
+| Context | Purpose | File |
+|---------|---------|------|
+| `PermissionContext` | Permission checking | `src/context/PermissionContext.tsx` |
+| `ShortcutContext` | Keyboard shortcuts | `src/context/ShortcutContext.tsx` |
+| `CareAppsContext` | Plugin management | `src/hooks/useCareApps.tsx` |
+| `EncounterProvider` | Encounter state | `src/pages/Encounters/utils/EncounterProvider.tsx` |
+| `AuthUserProvider` | Authentication state | `src/Providers/AuthUserProvider.tsx` |
+| `PatientUserProvider` | Patient portal context | `src/Providers/PatientUserProvider.tsx` |
+| `HistoryAPIProvider` | Navigation history | `src/Providers/HistoryAPIProvider.tsx` |
+
+### Jotai Atoms (Global State)
+
+| Atom | Purpose | File |
+|------|---------|------|
+| `developerMode` | Developer mode toggle | `src/atoms/developerMode.ts` |
+| `encounterFilterAtom` | Encounter filter state | `src/atoms/encounterFilterAtom.ts` |
+| `navExpansionAtom` | Sidebar expansion state | `src/atoms/navExpansionAtom.ts` |
+| `paymentReconcilationLocationAtom` | Payment location filter | `src/atoms/paymentReconcilationLocationAtom.ts` |
+| `pharmacyAtom` | Pharmacy queue state | `src/atoms/pharmacy.ts` |
+| `scheduleServiceTypeAtom` | Schedule service type cache | `src/atoms/scheduleServiceTypeAtom.ts` |
+| `userAtom` | Current user state | `src/atoms/user-atom.ts` |
+
+---
+
+## Recent Features
+
+### Latest Updates (2025)
+
+| Feature | Description | Related Flow |
+|---------|-------------|--------------|
+| Care Team Support | Care team user types and filtering | Care Team Management |
+| Facility Organization Selector | Organization-specific templates | Questionnaire Templates |
+| User Preferences | Pinned links/bookmarks | User Preferences |
+| Schedule Service Type Caching | Performance optimization | Scheduling |
+| Encounter Class in Medication | Encounter-aware medications | Medication Management |
+| Token Encounter Linking | Queue-encounter integration | Appointment Queuing |
+| Condition Editor Enhancements | Encounter class in conditions | Questionnaire Templates |
+| External Links Integration | Links in definitions | Diagnostic Reports |
+| Auto Print on Payment | Automatic receipt printing | Billing |
+| Medication Notes in Billing | Display med notes in bills | Medication/Billing |
+
+---
+
 ## Key Files Reference
 
 | Category | File Path |
@@ -517,6 +999,7 @@ flowchart TD
 | Plugin Types | `src/pluginTypes.ts` |
 | Plugin Hooks | `src/hooks/useCareApps.tsx` |
 | Plugin API | `src/types/plugConfig/plugConfigApi.ts` |
+| Plugin Devices Hook | `src/pages/Facility/settings/devices/hooks/usePluginDevices.ts` |
 | **Permission System** | |
 | Permission Context | `src/context/PermissionContext.tsx` |
 | Permission Constants | `src/common/Permissions.tsx` |
@@ -527,6 +1010,16 @@ flowchart TD
 | Patient Router | `src/Routers/PatientRouter.tsx` |
 | Public Router | `src/Routers/PublicRouter.tsx` |
 | Route Definitions | `src/Routers/routes/` |
+| **State Management** | |
+| Jotai Atoms | `src/atoms/` |
+| Context Providers | `src/context/`, `src/Providers/` |
+| **Key Components** | |
+| Encounter Provider | `src/pages/Encounters/utils/EncounterProvider.tsx` |
+| Care Team | `src/components/CareTeam/` |
+| Medication | `src/components/Medication/` |
+| Inventory | `src/pages/Facility/services/inventory/` |
+| Questionnaire Editor | `src/components/Questionnaire/` |
+| Template Builder | `src/pages/Encounters/TemplateBuilder/` |
 
 ---
 
@@ -538,3 +1031,4 @@ flowchart TD
 | Orange boxes | Plugin-customizable components |
 | Green boxes | Successful completion states |
 | Blue boxes | Starting points |
+| Dashed arrows | Permission relationships |
