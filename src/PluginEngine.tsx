@@ -23,6 +23,30 @@ import { t } from "i18next";
 import { Loader2Icon } from "lucide-react";
 import { z } from "zod";
 
+/**
+ * Local development plugins configuration.
+ * Add your local plugins here for development without needing backend registration.
+ * These will be merged with plugins fetched from the backend API.
+ *
+ * To enable: Set REACT_ENABLE_DEV_PLUGINS=true in your .env.local
+ */
+const DEV_PLUGINS: PlugConfig[] = [
+  {
+    slug: "care_scribe",
+    meta: {
+      url: "http://localhost:4173/assets/remoteEntry.js",
+      name: "Care Scribe",
+    },
+  },
+  {
+    slug: "care_auto_assign",
+    meta: {
+      url: "http://localhost:5174/assets/remoteEntry.js",
+      name: "care_auto_assign",
+    },
+  },
+];
+
 const getPluginManifest = async (config: PlugConfig) => {
   if (
     !config.meta.url ||
@@ -66,14 +90,36 @@ export default function PluginEngine({
     queryFn: query(plugConfigApi.list),
   });
 
+  // Merge backend plugins with dev plugins when enabled
+  const allPlugins = useMemo(() => {
+    const backendPlugins = enabledPlugins?.configs ?? [];
+    const enableDevPlugins =
+      import.meta.env.REACT_ENABLE_DEV_PLUGINS === "true";
+
+    if (enableDevPlugins) {
+      // Merge dev plugins, avoiding duplicates by slug
+      const backendSlugs = new Set(backendPlugins.map((p) => p.slug));
+      const uniqueDevPlugins = DEV_PLUGINS.filter(
+        (p) => !backendSlugs.has(p.slug),
+      );
+      console.info(
+        "[PluginEngine] Dev plugins enabled:",
+        uniqueDevPlugins.map((p) => p.slug),
+      );
+      return [...backendPlugins, ...uniqueDevPlugins];
+    }
+
+    return backendPlugins;
+  }, [enabledPlugins]);
+
   const pluginsQuery = useQueries({
-    queries: (enabledPlugins?.configs ?? []).map((config) => ({
+    queries: allPlugins.map((config) => ({
       queryKey: ["plugin-manifest", config.slug],
       queryFn: () => getPluginManifest(config),
     })),
     combine: (queries) =>
       queries.map(({ data, isLoading }, i) => {
-        const config = (enabledPlugins?.configs ?? [])[i];
+        const config = allPlugins[i];
 
         if (isLoading) {
           return { ...config, isLoading: true as const };
