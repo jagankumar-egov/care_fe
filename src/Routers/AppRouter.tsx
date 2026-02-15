@@ -91,7 +91,7 @@ export default function AppRouter() {
   const pluginRoutes = usePluginRoutes();
   const organizationRoutes = useOrganizationRoutes();
   let routes = Routes;
-
+  console.log(pluginRoutes,"pluginRoutes");
   useRedirect("/user", "/users");
 
   // Merge in Plugin Routes

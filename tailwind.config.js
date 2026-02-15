@@ -1,15 +1,15 @@
-const secondary = {
-  50: "#F9FAFB",
-  100: "#FBFAFC",
-  200: "#F7F5FA",
-  300: "#F1EDF7",
-  400: "#DFDAE8",
-  500: "#BFB8CC",
-  600: "#9187A1",
-  700: "#7D728F",
-  800: "#6A5F7A",
-  900: "#453C52",
-};
+const secondary= {
+  50:  "#FAF9F7",
+  100: "#F4F2EF",
+  200: "#E8E3DC",
+  300: "#D6CEC3",
+  400: "#B8ADA0",
+  500: "#9C9082",
+  600: "#7F7468",
+  700: "#655B51",
+  800: "#4F463E",
+  900: "#3A332D",
+}
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -21,17 +21,17 @@ module.exports = {
       },
       colors: {
         primary: {
-          100: "#def7ec",
-          200: "#bcf0da",
-          300: "#84e1bc",
-          400: "#31c48d",
-          500: "#0d9f6e",
-          600: "#057a55",
-          700: "#046c4e",
-          800: "#03543F",
-          900: "#014737",
-          DEFAULT: "#0d9f6e",
-        },
+  100: "#FFF4E6",
+  200: "#FFE4CC",
+  300: "#FFC999",
+  400: "#FB923C",
+  500: "#F97316",  // DEFAULT
+  600: "#EA580C",
+  700: "#C2410C",
+  800: "#9A3412",
+  900: "#7C2D12",
+  DEFAULT: "#F97316",
+},
         secondary: secondary,
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",

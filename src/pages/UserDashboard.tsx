@@ -38,6 +38,7 @@ type TabContentProps = {
 
 export default function UserDashboard() {
   const user = useAuthUser();
+  console.log(user,'user');
   const { signOut } = useAuthContext();
   const facilities = user.facilities || [];
   const { t } = useTranslation();
